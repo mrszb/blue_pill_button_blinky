@@ -39,9 +39,6 @@
 #define GPIOE_BASE      (PERIPH_BASE + 0x11800) // GPIOE base address is 0x40011800
 #define RCC_BASE        (PERIPH_BASE + 0x21000) //   RCC base address is 0x40021000
 
-//#define STACKINIT       0x20008000
-//#define DELAY           70000
-
 #define GPIOC   ((GPIO_type *)  GPIOC_BASE)
 #define GPIOD   ((GPIO_type *)  GPIOD_BASE)
 #define GPIOE   ((GPIO_type *)  GPIOE_BASE)
@@ -163,9 +160,12 @@ void SysTick_Handler(void){
 		GPIOC->BSRR = 1<<(14 + 16);
 	}
 
-	// debouncing routine
+
+	// get latest sample
 	bool btn_fresh_sample = ((GPIOC->IDR & (1<<15)) == 0);
 
+
+	// debouncing routine
 	// point to last recorded sample, overwrite with new sample ...
 	bool btn_oldest_sample = *p_debounce;
 	*p_debounce = btn_fresh_sample;
@@ -189,11 +189,13 @@ void SysTick_Handler(void){
 	{
 		if (running_total < LowerThr)
 			button_pressed = false;
+			// BTN UP EVENT
 	}
 	else
 	{
 		if (running_total > UpperThr)
 			button_pressed = true;
+			// BTN DOWN EVENT
 	}
 }
 
