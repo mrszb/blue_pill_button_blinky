@@ -130,6 +130,10 @@ volatile bool DebounceCircularQueue[DebounceQLen],
 volatile bool button_pressed;
 volatile int running_total;
 
+
+#define GENERATES_EVENTS 1
+
+
 typedef enum BtnActions {BTN_UP = 1, BTN_DOWN = 2} BtnAction;
 
 typedef struct BtnEvents
@@ -139,11 +143,29 @@ typedef struct BtnEvents
 } BtnEvent;
 
 
-bool query_btn_event(BtnEvent* aa)
+#define KeybQLen  10
+volatile BtnEvent evtQueue[KeybQLen];
+volatile BtnEvent *pQOut,*pQIn;
+
+bool query_btn_event(BtnEvent* evt)
 {
-	__disable_irq();
-	// next version
-	__enable_irq();
+#if GENERATES_EVENTS
+	// get oldest event out of keyboard queue
+	//__disable_irq();
+
+	if (pQOut == pQIn)
+		return false;
+
+	*evt = *pQOut;
+	pQOut++;
+
+	if (pQOut >= evtQueue + KeybQLen)
+		pQOut = evtQueue;
+
+	//__enable_irq();
+	return true;
+
+#endif
 	return false;
 }
 
@@ -163,7 +185,6 @@ void SysTick_Handler(void){
 
 	// get latest sample
 	bool btn_fresh_sample = ((GPIOC->IDR & (1<<15)) == 0);
-
 
 	// debouncing routine
 	// point to last recorded sample, overwrite with new sample ...
@@ -185,17 +206,36 @@ void SysTick_Handler(void){
 			running_total--;
 	}
 
+	BtnEvent newEvt = {0,0};
+
 	if  (button_pressed)
 	{
 		if (running_total < LowerThr)
+		{
 			button_pressed = false;
 			// BTN UP EVENT
+			newEvt.action = BTN_UP;
+		}
 	}
 	else
 	{
 		if (running_total > UpperThr)
+		{
 			button_pressed = true;
 			// BTN DOWN EVENT
+			newEvt.action = BTN_DOWN;
+		}
+	}
+
+	if ( newEvt.action !=0 )
+	{
+		*pQIn = newEvt;
+		newEvt.systick_time = systick_uptime_millis;
+		BtnEvent *pNextQIn = (pQIn >= evtQueue+KeybQLen-1) ?
+		    evtQueue : pQIn+1;
+
+		if (pNextQIn != pQOut)
+			pQIn = pNextQIn;
 	}
 }
 
@@ -206,6 +246,9 @@ void init_keyboard(void)
 	//
 	running_total = 0;
 	button_pressed = false;
+
+    pQIn  = evtQueue;
+    pQOut = evtQueue;
 }
 
 void init_systick(uint32_t s, uint8_t en)
@@ -224,6 +267,7 @@ void init_systick(uint32_t s, uint8_t en)
 	// Enable SysTick
 	SYSTICK->CSR |= (1 << 0);
 }
+
 
 int main(void)
 {
@@ -249,11 +293,29 @@ int main(void)
 	// enable interrupt
 	init_systick(1000, 1);
 
+#if GENERATES_EVENTS
+	bool light_on = false;
+#endif
+
     /* Loop forever */
 	for(;;){
 
+#if GENERATES_EVENTS
+		BtnEvent evt;
+		// toggle light on BTN_DOWN event
+		if ( query_btn_event(&evt) && evt.action == BTN_DOWN)
+		{
+			light_on = !light_on;
+			GPIOC->BSRR = (light_on ) ?
+					1 << 13 : 1 << (13 + 16);
+		}
+
+		// do as much stuff here as needed
+		// push events are stored in queue !
+		asm("nop");
+#else
 		GPIOC->BSRR = (button_pressed ) ?
 				1 << 13 : 1 << (13 + 16);
-
+#endif
 	}
 }
